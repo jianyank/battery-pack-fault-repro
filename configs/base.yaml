@@ -153,7 +153,8 @@ model:
     # ASSUMED：论文 Table 1 第 8–10 层的 stride 会把时间维继续放大，无法回到 256。
     # 改为逐级上采样后裁剪到 windows.length。
     channels: [32, 32, 16, 16]
-    out_channels: 8                                      # 只重建单体电压
+    # 注：曾有一个 `out_channels: 8` 键，零引用、已删除。解码器输出通道数由
+    # train.loss.recon_on 决定（"voltage"→8，"all"→20）。
   variational: true       # ASSUMED：L_reg 是 KL(q(z|x)‖p(z))，要求随机编码器；
                           # 但 Table 1 是纯确定性卷积栈，没有任何分布头。此处补一个变分头。
   latent_dim: 256         # 瓶颈维度，与 Table 1 的 conv3 输出一致
@@ -184,7 +185,10 @@ train:
     lambda1: 1.0             # ASSUMED  L_recon
     lambda2: 0.1             # ASSUMED  L_late（物理对齐）
     lambda3: 1.0e-3          # ASSUMED  L_reg（KL）
-    recon_on: "voltage"      # 只重建电压（非对称解码器）
+    # 重建目标。论文 §2.2 是非对称解码器**只重建 8 路电压**；作者代码 A7 的目标是
+    # **全部 20 通道**（docs/DEVIATIONS.md D6）。本键**真的被代码读取**：它同时决定
+    # 解码器输出通道数与训练目标。
+    recon_on: "voltage"      # "voltage"（论文文字，默认）| "all"（作者代码 A7 的做法）
     latent_align:
       soc_slots: 1           # 对齐 SOC 的潜变量槽数
       resistance_slots: 1    # 对齐内阻的潜变量槽数

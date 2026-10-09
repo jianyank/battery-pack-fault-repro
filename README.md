@@ -6,8 +6,9 @@ Lithium-Ion Battery Packs"**（Preprint submitted to Elsevier, 2026-08-13）的�
 方法链：电池包多通道时序 → 非对称卷积自编码器（部分潜变量对齐到电池模型状态）→
 24 维故障指标 → 局部离群因子（LOF）→ 异常报警。
 
-> **先读这个**：本项目对论文有 13 项假定、3 项不可恢复的缺口、3 处与论文不一致的实现选择，
-> 以及 5 处复现中发现的问题（其中 D1–D3、D5 属**论文自身**，D4 是**本项目的实现缺陷**、已修复）。
+> **先读这个**：本项目对论文有 13 项假定、3 项不可恢复的缺口、2 处与论文不一致的实现选择，
+> 以及 6 处复现中发现的问题（其中 D1–D3、D5、D6 属**论文自身**，D4 是**本项目的实现缺陷**、已修复）。
+> D6 尤其重要：**论文正文与作者代码在四个核心主张上不符**。
 > 全部逐条登记在 **[`docs/DEVIATIONS.md`](docs/DEVIATIONS.md)**。
 > 任何引用本复现数字的场合，都应同时引用该文件。
 
@@ -70,7 +71,13 @@ python scripts/rebuild_baseline.py   # 从已存 checkpoint 重算确定性基�
 python scripts/lof_scan.py           # LOF 侧单因素敏感性扫描（只读，秒级）
 python scripts/iae_baseline.py       # IAE 基线对照（复用同一 checkpoint，不训练，约 1 分钟）
 python scripts/lambda_ablation.py    # λ 消融，重训 3 个配置（约 12–15 分钟）
+python scripts/lof_audit.py          # 冻结特征：3 种 LOF 校准 × 3 个特征组，不重训
 ```
+
+`lof_audit.py` 默认读取最新的 `*_paper_deterministic`，可用 `--run-dir` 指定源目录，
+`--calibration-ratio 0.2 --seed 42` 指定按包留出比例与种子。结果包含逐窗分数、划分索引、
+CSV、图表和审计报告；不修改正式检测器。已完成的 [审计结果](outputs/20261009T101051Z_lof_audit/report.md)
+显示评分口径修正未改变主要观察，但仍不能证明重建特征的额外收益；留出并非独立健康测试。
 
 > `rebuild_baseline.py` 的存在是因为一处已修复的缺陷：推理期曾做变分采样，导致
 > 同一批窗口每次前向都得到不同特征（见 [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) D4）。

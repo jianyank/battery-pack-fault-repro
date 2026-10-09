@@ -77,6 +77,19 @@ def prepare_fold(cfg: Config, train_packs: list[PackData]) -> FoldTensors:
     volt_idx = [c - 1 for c in cfg.get("channels.cell_voltage")]
     ch_volt = ch.subset(volt_idx)
 
+    # 重建目标由 recon_on 决定：论文 §2.2 是非对称解码器**只重建 8 路电压**；
+    # 作者代码 A7 的目标是**全部 20 通道**（``trainNetwork(X_train, X_train, ...)``，
+    # 见 docs/DEVIATIONS.md D6）。默认 "voltage"，与论文文字一致。
+    recon_on = cfg.get("train.loss.recon_on")
+    if recon_on == "all":
+        target_tr = ch.transform(full[itr])
+        target_va = ch.transform(full[iva])
+    elif recon_on == "voltage":
+        target_tr = ch_volt.transform(volt[itr])
+        target_va = ch_volt.transform(volt[iva])
+    else:
+        raise ValueError(f"未知 train.loss.recon_on：{recon_on!r}（应为 'voltage' 或 'all'）")
+
     align_scaler = None
     a_raw = None
     if hidden is not None and cfg.get("train.loss.lambda2") != 0.0:
@@ -106,10 +119,10 @@ def prepare_fold(cfg: Config, train_packs: list[PackData]) -> FoldTensors:
 
     return FoldTensors(
         train_x=to_t(ch.transform(full[itr])),
-        train_v=to_t(ch_volt.transform(volt[itr])),
+        train_v=to_t(target_tr),
         train_a=align_t(itr),
         val_x=to_t(ch.transform(full[iva])),
-        val_v=to_t(ch_volt.transform(volt[iva])),
+        val_v=to_t(target_va),
         val_a=align_t(iva),
         ch_scaler=ch,
         volt_scaler=ch_volt,
@@ -193,7 +206,9 @@ def train_fold(
     model = AsymmetricAE(
         time_len=cfg.get("windows.length"),
         in_channels=n_in,
-        out_channels=len(cfg.get("channels.cell_voltage")),
+        # recon_on="all" 时解码器输出全部 20 通道（作者代码 A7 的做法）
+        out_channels=n_in if cfg.get("train.loss.recon_on") == "all"
+        else len(cfg.get("channels.cell_voltage")),
         latent_dim=cfg.get("model.latent_dim"),
         variational=cfg.get("model.variational"),
     ).to(device)

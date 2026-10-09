@@ -42,13 +42,15 @@ from packrepro.model.train import pick_device, train_fold  # noqa: E402
 
 def _load_model(cfg: Config, ckpt: Path, device: torch.device) -> tuple[AsymmetricAE, dict]:
     blob = torch.load(ckpt, map_location="cpu", weights_only=False)
+    n_in = sum(
+        len(cfg.get(f"channels.{k}")) for k in ("cell_voltage", "current", "temperature")
+    )
     model = AsymmetricAE(
         time_len=cfg.get("windows.length"),
-        in_channels=sum(
-            len(cfg.get(f"channels.{k}"))
-            for k in ("cell_voltage", "current", "temperature")
-        ),
-        out_channels=len(cfg.get("channels.cell_voltage")),
+        in_channels=n_in,
+        # recon_on="all" 时解码器输出全部 20 通道（作者代码 A7 的做法，见 DEVIATIONS D6）
+        out_channels=n_in if cfg.get("train.loss.recon_on") == "all"
+        else len(cfg.get("channels.cell_voltage")),
         latent_dim=cfg.get("model.latent_dim"),
         variational=cfg.get("model.variational"),
     )
@@ -89,6 +91,9 @@ def run(argv: list[str] | None = None) -> int:
     q3p = cfg.get("features.q3_percentile")
     eps = cfg.get("features.eps")
     pv = cfg.get("detect.persistence_variants")
+    # 20 通道重建（recon_on="all"）时，特征只取电压列
+    volt_idx = ([c - 1 for c in cfg.get("channels.cell_voltage")]
+                if cfg.get("train.loss.recon_on") == "all" else None)
 
     rows: list[dict] = []
     feature_store: dict[str, np.ndarray] = {}
@@ -155,7 +160,7 @@ def run(argv: list[str] | None = None) -> int:
         feats = compute_pack_features(
             model, target_pack,
             ch_scaler=chs, volt_scaler=vsc,
-            device=device, q3_percentile=q3p, eps=eps,
+            device=device, q3_percentile=q3p, eps=eps, volt_idx=volt_idx,
         )
         det = LOFDetector(
             k=cfg.get("detect.k"),
@@ -180,7 +185,7 @@ def run(argv: list[str] | None = None) -> int:
             parts.append(compute_pack_features(
                 d["model"], train_packs[pid],
                 ch_scaler=chs, volt_scaler=vsc, device=device,
-                q3_percentile=q3p, eps=eps,
+                q3_percentile=q3p, eps=eps, volt_idx=volt_idx,
             ))
         arr = np.concatenate(parts, axis=0)
         calib_cache[model_key] = arr

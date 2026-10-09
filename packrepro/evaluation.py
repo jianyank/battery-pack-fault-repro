@@ -80,12 +80,24 @@ def compute_pack_features(
     eps: float = 1e-8,
     batch_size: int = 512,
     deterministic: bool = True,
+    volt_idx: list[int] | None = None,
 ) -> np.ndarray:
-    """``(N, 24)`` 特征，在**物理电压域**上算。``deterministic`` 透传给 ``reconstruct``。"""
+    """``(N, 24)`` 特征，在**物理电压域**上算。
+
+    ``deterministic`` 透传给 ``reconstruct``。模型输出 20 通道时（``recon_on="all"``）
+    **必须**传 ``volt_idx`` 指明电压列，否则与 ``volt_scaler`` 的通道数对不上。
+    """
     x_norm = ch_scaler.transform(pack.full)
     recon_norm = reconstruct(
         model, x_norm, device=device, batch_size=batch_size, deterministic=deterministic
     )
+    if recon_norm.shape[-1] != volt_scaler.center.size:
+        if volt_idx is None:
+            raise ValueError(
+                f"重建输出 {recon_norm.shape[-1]} 通道，而电压 scaler 是 "
+                f"{volt_scaler.center.size} 通道；请传 volt_idx 指定电压列"
+            )
+        recon_norm = recon_norm[:, :, volt_idx]
 
     # 回到物理电压域 —— 两个指标都依赖这一步
     meas_v = volt_scaler.inverse_transform(pack.voltage.astype(np.float64))
