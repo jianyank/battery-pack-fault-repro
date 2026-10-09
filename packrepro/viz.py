@@ -1,8 +1,7 @@
-"""出图。
+"""出图。图注一律用英文，避免中文字体缺失导致方块字。
 
-图注一律用英文，避免中文字体缺失导致方块字。
-每张图都**必须**把口径写进标题/图注：协议（paper / lopo）、越限率不是准确率、
-纵轴是否为对数、横轴是**窗口序号而非时间**。
+每张图都把口径写进标题/图注：协议（paper / lopo）、越限率不是准确率、纵轴是否为对数、
+横轴是窗口序号而非时间。
 """
 
 from __future__ import annotations
@@ -63,10 +62,7 @@ def plot_lof_scores(
     protocol: str,
     log_y: bool = True,
 ) -> Path:
-    """单包的 LOF 分数曲线与阈值线。
-
-    横轴是**窗口序号，不是时间** —— 数据不含时间轴，缓存行序不是时间。
-    """
+    """单包的 LOF 分数曲线与阈值线。横轴是窗口序号，不是时间。"""
     fig, ax = plt.subplots(figsize=(11, 3.6))
     x = np.arange(scores.size)
     ax.plot(x, scores, lw=0.6, color="#1f77b4", label="LOF score")
@@ -95,8 +91,8 @@ def plot_exceedance_bars(
 ) -> Path:
     """各包越限 / 确认比例柱状图。
 
-    ``rows`` 里的列名由调用方决定（本项目为 ``exceedance_rate`` 与
-    ``confirmed_rate_K<K>``），故确认列名由参数给出，避免假设列名。
+    确认列名由 ``confirm_key`` 给出，因为 ``rows`` 的列名由调用方决定
+    （本项目为 ``confirmed_rate_K<K>``），不假设列名。
     """
     if not rows:
         raise ValueError("rows 为空")
@@ -146,8 +142,7 @@ def plot_resistance_and_latent(
 ) -> Path:
     """内阻轨迹 vs 潜特征（论文 Fig.7 形态）。
 
-    ⚠ ``hidden`` 与对齐目标**同源**，不是独立真值；本图只用于展示对齐是否发生，
-    不构成任何定位准确率证据。
+    ``hidden`` 与对齐目标同源，不是独立真值；本图只展示对齐是否发生，不构成定位准确率证据。
     """
     res = hidden[:, [c - 1 for c in resistance_channels]]
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))

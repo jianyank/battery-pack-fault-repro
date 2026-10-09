@@ -1,7 +1,7 @@
-"""配置加载与校验。
+"""配置加载与校验。对外只暴露 :class:`Config`。
 
-对外只暴露 :class:`Config`。配置里所有路径都相对项目根，由 :mod:`packrepro.paths`
-解析成绝对路径 —— 绝对路径只在本模块内部短暂存在，不写回配置、不外泄。
+配置里的路径均相对项目根，由 :mod:`packrepro.paths` 解析成绝对路径；绝对路径只在
+本模块内部短暂存在，不写回配置、不外泄。
 """
 
 from __future__ import annotations
@@ -123,8 +123,7 @@ class Config:
     def assumed_items(self) -> list[dict[str, Any]]:
         """返回论文未给、由本项目假定的参数清单（配置里 ``assumed:`` 段的原样内容）。
 
-        这些项的取值在本项目里**有数**，但在论文里**无数** —— 结论性报告引用它们时
-        必须同样标注，不得当作论文事实。
+        这些项在论文里无数，引用时不得当作论文事实。
         """
         items = self._raw.get("assumed")
         if not isinstance(items, list):

@@ -1,15 +1,10 @@
 """单个 LOPO 折的训练。
 
-划分（论文 §4.1）
------------------
-四个包 {6,8,9,10} 做**跨包留出**：每次留出一个包，用另外三个包训练。
-标准化统计量与对齐目标统计量**只在训练折上拟合**，绝不碰留出包。
+四个包 {6,8,9,10} 做跨包留出：每次留出一个包，用另外三个训练（论文 §4.1）。
+标准化统计量与对齐目标统计量只在训练折上拟合，不碰留出包。
 
-关键口径
---------
-* 选权判据为 ``val_recon``（重建质量），不是含 λ₂ 项的 ``val_loss`` —— 各配置 λ 不同，
-  按 ``val_loss`` 选会排成"谁加权项多谁大"，而不是"谁重建得准"。本项为 ``ASSUMED``。
-* ``history.csv`` **逐项记录** recon / late / reg 三个分量，不合并。
+选权判据为 ``val_recon`` 而非含 λ₂ 项的 ``val_loss`` —— 各配置 λ 不同，按 ``val_loss``
+选会变成"谁加权项多谁大"，而不是"谁重建得准"。本项为 ``ASSUMED``（``docs/DEVIATIONS.md`` A11）。
 """
 
 from __future__ import annotations
@@ -277,8 +272,7 @@ def train_fold(
             "model_state": best["state"],
             "ch_center": data.ch_scaler.center,
             "ch_scale": data.ch_scaler.scale,
-            # 电压列专用 scaler：推理时用于把重建结果 inverse_transform 回物理电压域，
-            # 因为 §2.3 的三个指标都必须在原始电压域上算。
+            # 电压列专用 scaler：推理时把重建结果反归一化回物理电压域（§2.3 的三个指标都在原始域上算）
             "volt_center": data.volt_scaler.center,
             "volt_scale": data.volt_scaler.scale,
             "align_center": None if data.align_scaler is None else data.align_scaler.center,

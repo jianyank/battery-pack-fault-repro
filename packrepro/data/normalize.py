@@ -1,10 +1,9 @@
 """按通道的稳健标准化。
 
-论文**完全未提**输入归一化（全文无 normalize / standardize 描述），故本模块的整体存在
-及其参数都属于 ``ASSUMED``，见 ``configs/base.yaml`` 的 ``data.normalize`` 与 ``docs/DEVIATIONS.md``。
+论文完全未提输入归一化，本模块及其参数均属 ``ASSUMED``（``docs/DEVIATIONS.md`` A13）。
 
-选择稳健统计量（中位数 / MAD）而非均值 / 标准差的原因：电池原始数据存在明显离群段
-（静置、异常脉冲），均值和标准差会被它们带偏；中位数与 MAD 对离群稳健。
+取中位数 / MAD 而非均值 / 标准差：电池原始数据存在明显离群段（静置、异常脉冲），
+均值与标准差会被它们带偏。
 """
 
 from __future__ import annotations
@@ -28,10 +27,7 @@ class ChannelScaler:
 
     @classmethod
     def fit(cls, signals: np.ndarray, *, method: str = "robust", floor: float = 1e-3) -> "ChannelScaler":
-        """在 ``(N, T, C)`` 上拟合。
-
-        统计量只应在**训练折**上拟合 —— 调用方负责这一点。
-        """
+        """在 ``(N, T, C)`` 上拟合。统计量只应在训练折上拟合，调用方负责这一点。"""
         if signals.ndim != 3:
             raise ValueError(f"signals 应为 3 维 (N,T,C)，实际 {signals.shape}")
 
@@ -68,9 +64,8 @@ class ChannelScaler:
     def subset(self, indices: list[int]) -> "ChannelScaler":
         """取列子集对应的 scaler。
 
-        例：scaler 拟合在 20 通道上，而重建目标只有 8 路电压，
-        用 ``subset(电压列的 0-based 下标)`` 得到电压专用的 scaler，
-        保证 ``transform`` 的前后通道一致。
+        例：拟合在 20 通道上的 scaler，用 ``subset(电压列的 0-based 下标)`` 得到电压专用
+        scaler，保证 ``transform`` 前后通道一致。
         """
         idx = np.asarray(indices, dtype=np.int64)
         if idx.size and (idx.min() < 0 or idx.max() >= self.center.size):

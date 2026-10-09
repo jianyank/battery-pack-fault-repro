@@ -1,11 +1,8 @@
 """快速自检：不训练，逐项验证数据层、模型层、指标层、检测层、出图层。
 
-用法::
-
     python scripts/smoke.py
 
-全部通过打印 ``SMOKE OK`` 并以 0 退出；任一项失败以 1 退出。
-**可移植性**：把整个目录改名后重跑本脚本，仍应通过 —— 全库无绝对路径。
+全部通过打印 ``SMOKE OK`` 并以 0 退出，任一项失败以 1 退出。
 """
 
 from __future__ import annotations
@@ -137,6 +134,19 @@ def main() -> int:
         s = det.calib_score_summary()
         return f"θ={res.threshold:.3f}, 校准中位数={s['median']:.3f}(应≈1)"
 
+    def c11_deterministic_inference():
+        """推理期必须不抽样，否则同一批窗口每次评分都得到不同特征（``docs/DEVIATIONS.md`` D4）。"""
+        m = AsymmetricAE().eval()
+        x = torch.randn(2, 256, 20)
+        with torch.no_grad():
+            a = m(x, sample=False).recon
+            b = m(x, sample=False).recon
+            c = m(x, sample=True).recon
+            d = m(x, sample=True).recon
+        assert torch.equal(a, b), "sample=False 两次前向应逐位相同"
+        assert not torch.equal(c, d), "sample=True 两次前向应不同（变分采样）"
+        return f"推理不抽样；采样 max|Δ|={float((c - d).abs().max()):.4f}"
+
     def c10_figure():
         from packrepro.viz import plot_lof_scores
 
@@ -159,6 +169,7 @@ def main() -> int:
     check("8  24 维特征", c8_features)
     check("9  LOF 检测", c9_lof)
     check("10 出图", c10_figure)
+    check("11 推理期确定性（不抽样）", c11_deterministic_inference)
 
     if FAILED:
         print(f"\nSMOKE FAILED: {len(FAILED)} 项未通过 -> {FAILED}")

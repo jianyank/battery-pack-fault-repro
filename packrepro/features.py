@@ -1,19 +1,12 @@
-"""24 维故障指标（论文 §2.3）。
+"""24 维故障指标（论文 §2.3）：单体 3 项 × 8 单体。
 
-每个单体 3 个指标 × 8 单体 = 24 维包级特征向量：
+1. ``σ_V,i``（§2.3.1，式 (5)–(7)）电压偏差标准差 —— 单体相对包均值的波动。
+2. ``CS_i``（§2.3.2，式 (8)）实测/重建电压余弦相似度。
+3. ``Q3_i``（§2.3.3）重建误差第三四分位数。
 
-1. **电压偏差标准差** ``σ_V,i``（§2.3.1，式 (5)–(7)）—— 单体相对包均值的波动。
-2. **实测/重建电压余弦相似度** ``CS_i``（§2.3.2，式 (8)）—— 波形方向一致性。
-3. **重建误差第三四分位数** ``Q3_i``（§2.3.3）—— 误差上部的中心趋势。
-
-⚠ 两处必须继承的口径
---------------------
-* 重建误差与余弦相似度都应在**物理电压域**计算，因此调用方须先用通道 scaler
-  把重建结果 ``inverse_transform`` 回原始域，再传给本模块。
-* 论文用 Q3 的理由是"对尾部极值敏感"—— 这个说法在统计上站不住
-  （四分位数恰恰是对极值**不**敏感的量）。本模块**照论文实现 Q3**，
-  但该理由已在 ``docs/DEVIATIONS.md`` 记为"论文论证有误、实现照旧"，
-  并另行提供高分位（p95/p99）作为对照，不做默认。
+两族都依赖物理量纲，**必须在原始电压域计算** —— 调用方须先把重建结果
+``inverse_transform`` 回原始域再传入。
+Q3 的选用理由在论文内部自相矛盾，本项目照论文实现（``docs/DEVIATIONS.md`` D1）。
 """
 
 from __future__ import annotations
@@ -24,11 +17,7 @@ FAMILIES = ("sigma_v", "cosine", "q3")
 
 
 def voltage_deviation_std(volt: np.ndarray) -> np.ndarray:
-    """``σ_V,i``：``(N, L, C)`` → ``(N, C)``。式 (5)–(7)。
-
-    ``V_mean(k) = mean_i V_i(k)``，``V_E,i(k) = V_i(k) − V_mean(k)``，
-    ``σ_V,i = sqrt( Σ_k (V_E,i(k) − mean_k V_E,i)² / (L−1) )``。
-    """
+    """``σ_V,i``：``(N, L, C)`` → ``(N, C)``。式 (5)–(7)，样本标准差（ddof=1）。"""
     if volt.ndim != 3:
         raise ValueError(f"volt 应为 (N, L, C)，实际 {volt.shape}")
     l = volt.shape[1]
@@ -50,10 +39,7 @@ def cosine_similarity(meas: np.ndarray, recon: np.ndarray, *, eps: float = 1e-8)
 
 
 def reconstruction_q3(recon_err_abs: np.ndarray, *, percentile: float = 75.0) -> np.ndarray:
-    """``Q3_i``：``(N, L, C)`` 的绝对重建误差 → ``(N, C)``。
-
-    论文 §2.3.3：对长度为 L 的误差序列升序排序后取第 75 个样本百分位。
-    """
+    """``Q3_i``：``(N, L, C)`` 的绝对重建误差 → ``(N, C)``。论文 §2.3.3。"""
     if recon_err_abs.ndim != 3:
         raise ValueError(f"recon_err_abs 应为 (N, L, C)，实际 {recon_err_abs.shape}")
     return np.percentile(recon_err_abs, percentile, axis=1)
@@ -68,15 +54,8 @@ def compute_features(
 ) -> np.ndarray:
     """三族拼接 → ``(N, 24)``。
 
-    Parameters
-    ----------
-    volt_meas, volt_recon
-        ``(N, L, 8)``，**同一物理电压域**（原始域，非归一化域）。
-
-    Returns
-    -------
-    np.ndarray
-        ``(N, 24)``：列序为 ``[σ_V(8), CS(8), Q3(8)]``。
+    两输入均为 ``(N, L, 8)`` 且须同处**原始**电压域（非归一化域）。
+    列序 ``[σ_V(8), CS(8), Q3(8)]``。
     """
     sigma_v = voltage_deviation_std(volt_meas)
     cos = cosine_similarity(volt_meas, volt_recon, eps=eps)

@@ -1,7 +1,6 @@
 """把 :class:`~packrepro.data.mat_io.Bundle` 组装成按包切分的数据集。
 
-数据已经是切好的窗（``Xall (256, 20, N)``），本模块**不再做任何切窗**，
-只做三件事：按包分组、通道切分、按需归一化。
+数据已是切好的窗（``Xall (256, 20, N)``），本模块不再切窗，只做按包分组、通道切分、按需归一化。
 """
 
 from __future__ import annotations
@@ -62,8 +61,8 @@ def load_experiment(cfg: Config, name: str) -> Bundle:
 def build_packs(bundle: Bundle, cfg: Config) -> dict[int, PackData]:
     """把 Bundle 按包号拆成 ``{pack_id: PackData}``。
 
-    注意：全部窗口都会被保留（包括论文所称的"故障段"），
-    因此调用方必须自行按 §4.1 的划分选取窗口，**不要**把返回值当作纯正常数据。
+    全部窗口（含论文所称的"故障段"）都会被保留，调用方须自行按 §4.1 选取窗口，
+    不要把返回值当作纯正常数据。
     """
     ch = split_channels(
         bundle.signals,
@@ -102,9 +101,8 @@ def train_val_split(
 ) -> tuple[np.ndarray, np.ndarray]:
     """把 ``n`` 个窗口切成 (train_idx, val_idx)。
 
-    数据**没有时间轴**（train 文件不含 ``ThisTimeSlot``），因此无法按时间切分 ——
-    这里用的是无放回随机切分，属于 ``ASSUMED``（见 docs/DEVIATIONS.md）。
-    切分用固定种子，可复现。
+    train 文件没有时间轴，无法按时间切分，故用固定种子的无放回随机切分 ——
+    属 ``ASSUMED``（``docs/DEVIATIONS.md`` A6）。
     """
     if not 0.0 <= val_ratio < 1.0:
         raise ValueError("val_ratio 应在 [0, 1) 内")

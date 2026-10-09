@@ -1,29 +1,9 @@
 """潜在特征引导的非对称卷积自编码器（论文 §2.2 + Table 1）。
 
-编码器 —— **严格按论文 Table 1 原样**
---------------------------------------
-输入 ``(B, 1, 256, 20)`` 逐层推算（无 padding）：
-
-    输入                  256 × 20
-    Conv  16 × [5×2]  s[1,2]    →  16 × 252 × 10
-    MaxPool    [3×1]  s[3,1]    →  16 ×  84 × 10
-    Conv  32 × [1×10] s[1,1]    →  32 ×  84 ×  1
-    MaxPool    [3×1]  s[3,1]    →  32 ×  28 ×  1
-    Conv 256 × [28×1] s[1,1]    → 256 ×   1 ×  1   ← 瓶颈 256 维
-
-与论文「compressed into a latent representation of 256 features」一致。
-
-解码器 —— **与 Table 1 有差异，必须声明**
--------------------------------------------
-论文 Table 1 第 8–10 层（Transposed conv `[1×8] s[3,1]` → `[3×1] s[3,1]` → `[5×1] s[1,1]`）
-会把时间维继续放大：1→28→84→250→750→746，**得到 746×8，而不是 Table 2 声明的 256×8×1**。
-即论文自己的 Table 1 与 Table 2 相互矛盾（推算过程见 ``docs/DEVIATIONS.md`` 第 5 条）。
-
-本实现的处理：
-* 前两级转置卷积沿用论文的 ``[28×1] s[2,1]`` 与 ``[3×1] s[3,1]``（1→28→84，维数正确）；
-* 之后用 ``Upsample`` 直接到 ``(256, 1)``，再用两层普通卷积出 8 个单体通道。
-
-这样输出维度严格等于 Table 2 声明的 ``256 × 8``，且"解码器只重建电压"这一非对称性不变。
+编码器严格按 Table 1 原样实现，瓶颈 256 维（逐层维度标注在下方的层注释里）。
+解码器与 Table 1 不一致：按 Table 1 推算输出是 746×8，与 Table 2 声明的 256×8 矛盾。
+本项目前两级转置卷积沿用论文，其后用 ``Upsample`` 补到 ``(256, 1)``，使输出维度等于 Table 2。
+详见 ``docs/DEVIATIONS.md`` C1。
 """
 
 from __future__ import annotations
@@ -36,8 +16,6 @@ import torch.nn as nn
 
 @dataclass
 class ModelOutput:
-    """前向输出。"""
-
     recon: torch.Tensor       # (B, T, 8) 只重建单体电压
     mu: torch.Tensor | None   # (B, L) 变分均值，未启用变分头时为 None
     logvar: torch.Tensor | None
@@ -76,7 +54,7 @@ class AsymmetricAE(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        # ---- 变分头：论文 Table 1 没有它，但 L_reg 是 KL(q(z|x)‖p(z))，必须有 ----
+        # ---- 变分头：Table 1 没有，但式 (4) 的 KL 项需要它（DEVIATIONS.md D2）----
         if variational:
             self.to_mu = nn.Linear(latent_dim, latent_dim)
             self.to_logvar = nn.Linear(latent_dim, latent_dim)
@@ -96,8 +74,15 @@ class AsymmetricAE(nn.Module):
         )
 
     # ------------------------------------------------------------------ 前向
-    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-        """``(B, T, C)`` → ``(z, mu, logvar)``。"""
+    def encode(
+        self, x: torch.Tensor, *, sample: bool = True
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+        """``(B, T, C)`` → ``(z, mu, logvar)``。
+
+        ``sample=False`` 时 ``z`` 取后验均值。推理/评分路径必须用 ``False``：``eval()``
+        关不掉 ``reparameterize`` 里的显式抽样，否则同一输入两次评分结果不同
+        （见 ``docs/DEVIATIONS.md`` D4）。训练路径用 ``True``，式 (4) 的 KL 项需要随机编码器。
+        """
         if x.ndim != 3:
             raise ValueError(f"输入应为 (B, T, C)，实际 {tuple(x.shape)}")
         if (x.shape[1], x.shape[2]) != (self.time_len, self.in_channels):
@@ -112,7 +97,8 @@ class AsymmetricAE(nn.Module):
 
         mu = self.to_mu(h)
         logvar = self.to_logvar(h).clamp(-30.0, 20.0)   # 数值稳定
-        return self.reparameterize(mu, logvar), mu, logvar
+        z = self.reparameterize(mu, logvar) if sample else mu
+        return z, mu, logvar
 
     @staticmethod
     def reparameterize(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
@@ -128,6 +114,6 @@ class AsymmetricAE(nn.Module):
         h = self.dec_head(h)                        # (B, 8, T, 1)
         return h.squeeze(-1).transpose(1, 2)        # (B, T, 8)
 
-    def forward(self, x: torch.Tensor) -> ModelOutput:
-        z, mu, logvar = self.encode(x)
+    def forward(self, x: torch.Tensor, *, sample: bool = True) -> ModelOutput:
+        z, mu, logvar = self.encode(x, sample=sample)
         return ModelOutput(recon=self.decode(z), mu=mu, logvar=logvar, z=z)

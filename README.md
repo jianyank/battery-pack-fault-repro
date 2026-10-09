@@ -6,8 +6,9 @@ Lithium-Ion Battery Packs"**（Preprint submitted to Elsevier, 2026-08-13）的�
 方法链：电池包多通道时序 → 非对称卷积自编码器（部分潜变量对齐到电池模型状态）→
 24 维故障指标 → 局部离群因子（LOF）→ 异常报警。
 
-> **先读这个**：本项目对论文有 13 项假定、2 项不可恢复的缺口、3 处与论文不一致的实现选择，
-> 以及 3 处复现中发现的论文自身问题。全部逐条登记在 **[`docs/DEVIATIONS.md`](docs/DEVIATIONS.md)**。
+> **先读这个**：本项目对论文有 13 项假定、3 项不可恢复的缺口、3 处与论文不一致的实现选择，
+> 以及 5 处复现中发现的问题（其中 D1–D3、D5 属**论文自身**，D4 是**本项目的实现缺陷**、已修复）。
+> 全部逐条登记在 **[`docs/DEVIATIONS.md`](docs/DEVIATIONS.md)**。
 > 任何引用本复现数字的场合，都应同时引用该文件。
 
 ---
@@ -35,9 +36,9 @@ conda activate batfd          # Python 3.12.14 / torch 2.14.0+cu126 / CUDA 可�
 | `StandTestData2.mat` | 82 MB | 21,013 窗；包 `1–5` |
 | `StandTestData3.mat` | 364 MB | 40,093 窗；包 `17–21` |
 
-⚠ **数据不随版本控制走**（`data/raw/` 已 gitignore，828 MB）。
-**把本目录搬到别处时必须一并带上这四个文件**，否则无法运行。
-校验和与来源见 [`data/README.md`](data/README.md)，用 `python run.py check-data` 核对。
+**数据不随版本控制走**（`data/raw/` 已 gitignore，828 MB）。把本目录搬到别处时
+必须一并带上这四个文件，否则无法运行。校验和与来源见
+[`data/README.md`](data/README.md)，用 `python run.py check-data` 核对。
 
 格式为 **MAT v5**（`h5py` 读不了，只能用 `scipy.io`）。
 `Xall` 形状 `(256, 20, N)` —— **每个样本本身就是切好的窗**，本项目不再切分。
@@ -51,7 +52,7 @@ conda activate batfd          # Python 3.12.14 / torch 2.14.0+cu126 / CUDA 可�
 
 ```bash
 python run.py check-data    # 核对 data/raw 四个 .mat 的大小与 SHA256（搬到别处后先跑这个）
-python run.py smoke         # 10 项自检，不训练，约 1 分钟
+python run.py smoke         # 11 项自检，不训练，约 1 分钟
 python run.py paper         # 端到端，论文 §4.1 协议
 python run.py lopo          # 端到端，跨包留出（更严格的泛化测试，不是论文协议）
 python run.py all           # 先 paper 再 lopo
@@ -61,6 +62,16 @@ python run.py all           # 先 paper 再 lopo
 
 `scripts/` 下的脚本也可直接运行（等效）：`python scripts/smoke.py`、
 `python scripts/run_all.py --protocol paper`、`python scripts/check_data.py`。
+
+两个**诊断**脚本（不训练，秒级／约 1 分钟）：
+
+```bash
+python scripts/rebuild_baseline.py   # 从已存 checkpoint 重算确定性基线（约 1 分钟）
+python scripts/lof_scan.py           # LOF 侧单因素敏感性扫描（秒级）
+```
+
+> `rebuild_baseline.py` 的存在是因为一处已修复的缺陷：推理期曾做变分采样，导致
+> 同一批窗口每次前向都得到不同特征（见 [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) D4）。
 
 产物落在 `outputs/<timestamp>_<tag>/`：训练历史、checkpoint、特征、LOF 分数、
 `detection_table.csv`、`figures/*.png`、`summary.json`。
@@ -78,20 +89,23 @@ data/raw/                  # 四个 .mat（不入库；校验和见 data/README.
 packrepro/
   paths.py                 # ★ 相对根定位，全库无绝对路径
   config.py                # 配置加载与校验
-  data/                    # mat_io / channels / windows / normalize / dataset
+  data/                    # mat_io / channels / normalize / dataset
   model/                   # net（非对称 AE）/ losses / targets / train
   features.py              # 24 维故障指标（§2.3）
   detect.py                # LOF + 分位阈值 + 持久性（§2.4）
   evaluation.py            # 重建、特征、检测的编排
   viz.py                   # 出图
 scripts/
-  smoke.py                 # 10 项自检
+  smoke.py                 # 11 项自检
   run_all.py               # 端到端驱动
   check_data.py            # 数据大小与 SHA256 核对
+  rebuild_baseline.py      # 从 checkpoint 重算确定性基线（不训练）
+  lof_scan.py              # LOF 单因素敏感性扫描（只读）
 docs/
   DEVIATIONS.md            # ★ 与论文的全部偏差登记
   REPRODUCTION_NOTES.md    # 论文给了什么 / 不可复现什么
   Battery_Pack_Fault_Manuscript.pdf
+  Battery_Pack_Fault_Reproduction_Report.md   # ⛔ 已弃用：pypack 时代产物，数字不可引用
 ```
 
 ## 5. 别处运行
@@ -103,7 +117,7 @@ docs/
 
 | 场景 | 结果 |
 |---|---|
-| 目录改名 / 换路径 | ✅ 在 `_portability_probe_renamed` 下、不设环境变量，smoke 10/10 通过 |
+| 目录改名 / 换路径 | ✅ 在 `_portability_probe_renamed` 下、不设环境变量，smoke 全项通过 |
 | 从任意工作目录启动 | ✅ 在 `/tmp` 下 `python <路径>/run.py check-data` 与 `run.py smoke` 均通过 |
 | 无 GPU 的机器 | ✅ `CUDA_VISIBLE_DEVICES=""` 跑通全链路，自动回退 CPU |
 | 无需安装 | ✅ 无 `pyproject`/`setup.py`，靠 `sys.path` 插入，不需要 `pip install -e .` |
@@ -114,7 +128,7 @@ docs/
    `python run.py check-data` 核对（大小 + SHA256，期望值见 [`data/README.md`](data/README.md)）。
 2. **选对解释器。** 必须是装了 `torch` 的环境（见 `requirements.txt`）。
    IDE 默认解释器往往不是它 —— 症状是 `ModuleNotFoundError: No module named 'torch'`。
-3. **跑一遍自检。** `python run.py smoke`，10 项应全过。
+3. **跑一遍自检。** `python run.py smoke`，11 项应全过。
 
 ### 未实测的场景
 
@@ -124,14 +138,10 @@ docs/
 
 ## 6. 结果口径 —— 不报什么
 
-| 项 | 可否 | 原因 |
-|---|---|---|
-| 训练侧 `val_recon`、24 维特征分布、LOF 分数与越限比例 | ✅ | 直接可算 |
-| 提前量天数 | ❌ | 无投运日期；窗口序号不是时间轴 |
-| 真实虚警率 / 召回率 / F1 | ❌ | 无独立健康段与逐窗故障真值 |
-| 单体定位准确率 | ❌ | `Hiddall` 与对齐目标同源，非独立真值 |
-| 与论文 Table 3/4 逐日对照 | ❌ | 天数零点不同；pack 12、14 本地无数据 |
+可报 / 不可报的完整清单见 [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) G 节。要点：
+不报提前量天数（无投运日期，窗口序号不是时间轴）、真实虚警率 / 召回率 / F1（无独立健康段
+与逐窗故障真值）、单体定位准确率（`Hiddall` 与对齐目标同源）、与论文 Table 3/4 的逐日对照。
 
 **越限比例是描述性比例，不是虚警率。** 论文取训练集 LOF 分数的 99 分位作阈值，
-即训练数据本身就有约 1% 越限；当被评窗口来自另一分布时，越限比例必然远高于 1%。
+即训练数据本身就有约 1% 越限；被评窗口来自另一分布时，越限比例必然远高于 1%。
 这不是 LOF 算错，而是阈值校准域与评分域不一致的必然结果。

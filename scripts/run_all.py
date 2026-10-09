@@ -1,21 +1,14 @@
 """端到端复现驱动：数据 → 训练 → 指标 → LOF → 图表。
 
-用法::
-
-    python scripts/run_all.py                       # 用 configs/base.yaml，协议取其中的 protocol
     python scripts/run_all.py --protocol paper      # 论文 §4.1 原样
-    python scripts/run_all.py --protocol lopo       # 跨包留出（更严格的泛化测试）
-    python scripts/run_all.py --max-epochs 5        # 冒烟用，快速跑通全链路
+    python scripts/run_all.py --protocol lopo       # 跨包留出（不是论文协议）
+    python scripts/run_all.py --max-epochs 5        # 冒烟用
 
 产物落在 ``outputs/<timestamp>_<protocol>/``：history、checkpoint、特征、LOF 分数、
 检测对照表、图表、summary.json。
 
-口径边界（必须随结果一并声明）
-------------------------------
-* 不报提前量天数（本地无投运日期，窗口序号不是时间轴）。
-* 不报真实虚警率 / 召回率 / F1（无独立健康段与逐窗故障真值）。
-* 不报单体定位准确率（Hiddall 与对齐目标同源，非独立真值）。
-* 论文 Test dataset 2 的 pack 12、14 **本地无数据**，表中显式标注为 missing。
+口径边界（不报提前量天数、虚警率/召回率/F1、单体定位准确率；论文 Test dataset 2 的
+pack 12、14 本地无数据）见 ``docs/DEVIATIONS.md`` G 与 E。
 """
 
 from __future__ import annotations
@@ -36,12 +29,12 @@ import torch  # noqa: E402
 from packrepro import paths, viz  # noqa: E402
 from packrepro.config import Config  # noqa: E402
 from packrepro.data import build_packs, load_experiment, train_val_split  # noqa: E402
-from packrepro.data.normalize import ChannelScaler  # noqa: E402
 from packrepro.detect import LOFDetector  # noqa: E402
 from packrepro.evaluation import (  # noqa: E402
     compute_pack_features,
     persistence_variant,
     reconstruct,
+    scalers_from_ckpt,
 )
 from packrepro.model import AsymmetricAE  # noqa: E402
 from packrepro.model.train import pick_device, train_fold  # noqa: E402
@@ -62,14 +55,6 @@ def _load_model(cfg: Config, ckpt: Path, device: torch.device) -> tuple[Asymmetr
     model.load_state_dict(blob["model_state"])
     model.to(device).eval()
     return model, blob
-
-
-def _volt_scaler_from_ckpt(blob: dict) -> ChannelScaler:
-    return ChannelScaler(center=blob["volt_center"], scale=blob["volt_scale"], method="robust")
-
-
-def _ch_scaler_from_ckpt(blob: dict) -> ChannelScaler:
-    return ChannelScaler(center=blob["ch_center"], scale=blob["ch_scale"], method="robust")
 
 
 def _write_scores_csv(path: Path, pack_id: int, scores, threshold, confirmed) -> None:
@@ -166,16 +151,16 @@ def run(argv: list[str] | None = None) -> int:
     def detect_with(model_key: int, calib_features, target_pack, tag_name: str):
         d = trained[model_key]
         model, blob = d["model"], d["blob"]
+        chs, vsc = scalers_from_ckpt(blob)
         feats = compute_pack_features(
             model, target_pack,
-            ch_scaler=_ch_scaler_from_ckpt(blob),
-            volt_scaler=_volt_scaler_from_ckpt(blob),
+            ch_scaler=chs, volt_scaler=vsc,
             device=device, q3_percentile=q3p, eps=eps,
         )
         det = LOFDetector(
             k=cfg.get("detect.k"),
             threshold_quantile=cfg.get("detect.threshold_quantile"),
-            persistence=1,
+            persistence=cfg.get("detect.persistence_windows"),
             standardize=cfg.get("detect.standardize"),
         ).fit(calib_features)
         res = det.detect(feats)
@@ -189,8 +174,7 @@ def run(argv: list[str] | None = None) -> int:
             return calib_cache[model_key]
         d = trained[model_key]
         blob = d["blob"]
-        chs = _ch_scaler_from_ckpt(blob)
-        vsc = _volt_scaler_from_ckpt(blob)
+        chs, vsc = scalers_from_ckpt(blob)
         parts = []
         for pid in pack_ids:
             parts.append(compute_pack_features(
@@ -204,10 +188,10 @@ def run(argv: list[str] | None = None) -> int:
 
     def evaluate_targets(calib: np.ndarray, packs_dict: dict, dataset_name: str,
                          model_key: int, paper_packs: set[int] | None = None):
-        """对数据集内**全部**包评分。
+        """对数据集内全部包评分。
 
         ``paper_packs`` 标出其中哪些属于论文的对应测试集；其余包本地有、论文未用，
-        仍然评分并出表，但用 ``in_paper_test_set`` 列区分，避免被误当论文结果引用。
+        仍评分出表，但用 ``in_paper_test_set`` 列区分，避免被误当论文结果引用。
         """
         for pid in sorted(packs_dict):
             pack = packs_dict[pid]

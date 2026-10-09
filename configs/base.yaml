@@ -223,12 +223,12 @@ features:
 # 检测 —— LOF，论文 §2.4
 # ----------------------------------------------------------------------------
 detect:
-  method: "lof"
+  # 注：本段只有 k / threshold_quantile / standardize / persistence_windows /
+  # persistence_variants 五个键**真的被代码读取**。曾存在的 method / k_fallback /
+  # threshold_domain 是零引用的死键，已删除 —— 改它们不会有任何效果，是个陷阱。
   # ASSUMED：论文 Eq.(9)-(12) 中 k 全程只有符号，**全文未赋值**。
-  k: 20                                  # 取 sklearn 默认；另做 k 敏感性扫描
-  k_fallback: "min"                      # k = min(k, N_fit − 1)
+  k: 20                                  # 取 sklearn 默认；敏感性扫描见 scripts/lof_scan.py
   threshold_quantile: 0.99               # 论文：正常训练集 LOF 分数的 99 分位
-  threshold_domain: "train"              # ASSUMED：阈值的校准域（论文未说明）
   # ASSUMED：论文未说明 LOF 前是否标准化特征。24 维特征量纲差异极大
   # （余弦 ≈1，Q3 为电压量级），不标准化会让欧氏距离被大量纲特征完全主导。
   standardize: true

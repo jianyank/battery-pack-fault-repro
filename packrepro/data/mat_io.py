@@ -1,20 +1,13 @@
 """读取 ``Stand*.mat``。
 
-实测事实（本轮已核实，见 docs/REPRODUCTION_NOTES.md）
------------------------------------------------------
-* 四个文件均为 **MAT v5**（非 v7.3），因此 :mod:`h5py` **读不了**，只能 :mod:`scipy.io`。
-* ``Xall`` 形状 ``(256, 20, N)`` —— **数据已经是切好的窗**：
-  每个样本本身就是 256 时间步 × 20 通道。滑窗步长由数据生产方决定，
-  **本地不可知、也不由本项目设定**。
-* ID 变量名在文件间不统一：``ThisTrainID`` / ``ThisID1`` / ``ThisID``。
-* ``Hiddall`` ``(1, 9, N)`` 仅 train 与 test1 有；``ThisTimeSlot`` 仅 test1/2/3 有。
+实测事实（见 ``docs/REPRODUCTION_NOTES.md``）：四个文件均为 MAT v5（非 v7.3），
+``h5py`` 读不了，只能用 ``scipy.io``；``Xall`` 形状 ``(256, 20, N)``，样本本身就是
+256×20 的窗，滑窗步长不可知（``docs/DEVIATIONS.md`` B1）；ID 变量名在文件间不统一
+（``ThisTrainID`` / ``ThisID1`` / ``ThisID``）；``Hiddall`` 仅 train 与 test1 有，
+``ThisTimeSlot`` 仅 test1/2/3 有。
 
-已知 scipy 缺陷
----------------
-:func:`scipy.io.whosmat` 在 ``StandTestData1.mat`` 上抛
-``TypeError: 'NoneType' object is not iterable`` —— 该文件本身是合法的 v5 文件
-（``loadmat`` 能完整读出）。故本模块失败时回退 ``loadmat``，
-并**记录走了哪条路径**，供审计报告留痕，不静默掩盖。
+已知 scipy 缺陷：``whosmat`` 在 ``StandTestData1.mat`` 上抛 ``TypeError`` —— 该文件本身
+是合法的 v5 文件。故失败时回退 ``loadmat`` 并记录实际路径，供审计留痕，不静默掩盖。
 """
 
 from __future__ import annotations
@@ -66,7 +59,7 @@ class Bundle:
     time_slot: np.ndarray | None # (N,) 或 None —— 实测无法读出，见 time_note
     hidden: np.ndarray | None    # (N, 9) 或 None；推断为 [SOC, R₁…R₈]，未经核实
     loader: str                  # 实际读取路径，审计用
-    time_note: str = "absent"    # 时间变量的实际情况，必须随结果一并说明
+    time_note: str = "absent"    # 该文件时间变量的实测状态：absent / numeric / 不可解码
 
     @property
     def n_windows(self) -> int:
@@ -97,10 +90,7 @@ def load_bundle(
     expected_cols: int = 20,
     hidden_channels: int = 9,
 ) -> Bundle:
-    """读一个 ``Stand*.mat`` 并做形状断言。
-
-    形状不符立即抛错，不静默降级 —— 形状错了继续算没有任何意义。
-    """
+    """读一个 ``Stand*.mat`` 并做形状断言。形状不符立即抛错，不静默降级。"""
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"数据文件不存在：{path}")
@@ -136,10 +126,9 @@ def load_bundle(
     if pack_ids.size != n:
         raise ValueError(f"ID 长度 {pack_ids.size} 与窗数 {n} 不一致")
 
-    # 时间变量：实测 test1/2/3 的 ``ThisTimeSlot`` 是 MATLAB **MCOS datetime 对象**
-    # （dtype 带字段 _TypeSystem/_Class/_ObjectMetadata），scipy 无法解码其内容。
-    # 因此时间轴在本项目里**实际不可用** —— 这独立印证了"窗口序号不是时间轴"，
-    # 任何以天数为单位的结论都不可复现。此处如实记录，不假装读到了。
+    # 实测 test1/2/3 的 ``ThisTimeSlot`` 是 MATLAB MCOS datetime 对象，scipy 无法解码其内容，
+    # 故时间轴在本项目里实际不可用 —— 这独立印证了"窗口序号不是时间轴"。
+    # 如实记录读到了什么，不假装读到了。
     time_slot = None
     time_note = "absent"
     if time_var in raw:
