@@ -1,0 +1,49 @@
+# 28 个电池包的故障类型与受影响单体 —— 论文 Appendix Table 5 的**核实版**
+#
+# 来源：Battery_Pack_Fault_Manuscript.pdf 第 20 页（用 pymupdf 直接抽取原文表格）。
+#
+# ⚠ 为什么要有这个文件：
+#   项目里的 outputs/Battery_Pack_Fault_Manuscript.md 第 340–357 行也有一份 Table 5，
+#   但那份 **右列整体错位约 3 行**，是错的。例如它说 pack 5 = Increased IR (Cell 1)、
+#   pack 6 = Abnormally low current、pack 9 = Increased IR (Cell 8)；PDF 原文分别是
+#   Voltage drop (Cell 5)、Increased IR (Cell 8)、Increased IR (Cell 2)。
+#   论文 §4.2 正文说 pack 9 的异常单体是 Cell 2，与 PDF 原文一致 —— 也就是说
+#   **论文本身自洽，是 .md 转写件抄错了**。本文件以 PDF 原文为准。
+#
+# 字段说明：
+#   cells       受影响单体编号（1..8）；空列表表示该故障类型不指向特定单体
+#   localizable 是否可用于「单体定位」评估（必须有明确的单体标签）
+#   reason      不可用时的原因
+
+# 说明：28 个包中，我们手上只有 14 个（见 available_packs）
+available_packs: [1, 2, 3, 4, 5, 6, 8, 9, 10, 17, 18, 19, 20, 21]
+
+packs:
+  1:  {description: "Abnormal voltage (Cell 7)",                    cells: [7],       localizable: true,  reason: ""}
+  2:  {description: "Increased internal resistance (Cells 6, 8)",   cells: [6, 8],    localizable: true,  reason: ""}
+  3:  {description: "Increased internal resistance (Cell 7)",       cells: [7],       localizable: true,  reason: ""}
+  4:  {description: "Increased internal resistance (Cell 1)",       cells: [1],       localizable: true,  reason: ""}
+  5:  {description: "Voltage drop (Cell 5)",                        cells: [5],       localizable: true,  reason: ""}
+  6:  {description: "Increased internal resistance (Cell 8)",       cells: [8],       localizable: true,  reason: ""}
+  7:  {description: "Abnormal voltage (Cells 5, 7, 8)",             cells: [5, 7, 8], localizable: true,  reason: ""}
+  8:  {description: "Increased internal resistance (all cells)",    cells: [],        localizable: false, reason: "全部单体，无定位真值"}
+  9:  {description: "Increased internal resistance (Cell 2)",       cells: [2],       localizable: true,  reason: ""}
+  10: {description: "Increased IR (Cell 8); Abnormal voltage (Cell 7)", cells: [8, 7], localizable: true, reason: ""}
+  11: {description: "Abnormally low current",                       cells: [],        localizable: false, reason: "电流类故障，不指向单体"}
+  12: {description: "Abnormal voltage (Cells 7, 8); Temp. rise (Sensor 4)", cells: [7, 8], localizable: true, reason: ""}
+  13: {description: "Abnormally low current",                       cells: [],        localizable: false, reason: "电流类故障，不指向单体"}
+  14: {description: "Abnormal voltage drop (Cell 1)",               cells: [1],       localizable: true,  reason: ""}
+  15: {description: "Abnormal voltage (multiple cells)",            cells: [],        localizable: false, reason: "多单体但未列明具体编号"}
+  16: {description: "Abnormal voltage (Cells 5, 7); Capacity fade (Cell 4)", cells: [5, 7, 4], localizable: true, reason: ""}
+  17: {description: "Excessive internal resistance (Cell 3)",       cells: [3],       localizable: true,  reason: ""}
+  18: {description: "excessive internal resistance (all cells)",    cells: [],        localizable: false, reason: "全部单体，无定位真值"}
+  19: {description: "Abnormally low current",                       cells: [],        localizable: false, reason: "电流类故障，不指向单体"}
+  20: {description: "Abnormally low current",                       cells: [],        localizable: false, reason: "电流类故障，不指向单体"}
+  21: {description: "Increased internal resistance (all cells)",    cells: [],        localizable: false, reason: "全部单体，无定位真值"}
+  22: {description: "Abnormal voltage (Cell 8)",                    cells: [8],       localizable: true,  reason: ""}
+  23: {description: "Abnormal voltage (Cells 5, 7)",                cells: [5, 7],    localizable: true,  reason: ""}
+  24: {description: "Abnormal voltage drop (all cells)",            cells: [],        localizable: false, reason: "全部单体，无定位真值"}
+  25: {description: "Abnormal voltage (Cell 8)",                    cells: [8],       localizable: true,  reason: ""}
+  26: {description: "Large cell voltage deviation",                 cells: [],        localizable: false, reason: "未指明单体"}
+  27: {description: "Abnormal voltage (Cell 7)",                    cells: [7],       localizable: true,  reason: ""}
+  28: {description: "Abnormal voltage deviation; Temperature fluctuation", cells: [], localizable: false, reason: "未指明单体"}

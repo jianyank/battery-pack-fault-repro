@@ -1,0 +1,265 @@
+# ============================================================================
+# packrepro 全局配置 —— 单一事实来源
+#
+# 论文：Latent Feature Informed Asymmetric Autoencoder for Fault Detection in
+#       Lithium-Ion Battery Packs (Preprint submitted to Elsevier, 2026-08-13)
+#
+# 约定
+# ----
+#   · 所有路径**相对项目根**书写，由 packrepro/paths.py 解析。全库无绝对路径。
+#   · 标注 `ASSUMED` 的项 = **论文未给出**，由本项目自行假定，依据见 docs/DEVIATIONS.md。
+#     凡 ASSUMED 项都必须在结论性报告里同样标注，不得当作论文事实引用。
+#   · 标注 `INFERRED` 的项 = 论文未给、但由数据数值吻合推出的假设，非文档事实。
+#   · 未跑过实验得出的数字一律不留占位值。
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 论文未给、由本项目假定的项 —— **机器可读清单**
+#
+# 上方各节的 `ASSUMED` 是给人看的注释；此清单是给程序与报告核对的唯一来源。
+# 结论性报告在引用这些参数时，必须同样标注「论文未给、本项目假定」。
+# 逐条依据见 docs/DEVIATIONS.md。
+# ----------------------------------------------------------------------------
+assumed:
+  - key: "train.loss.lambda1"
+    what: "损失权重 λ₁ (L_recon)"
+    value: 1.0
+    why: "论文式(1)只给符号，全文无取值"
+  - key: "train.loss.lambda2"
+    what: "损失权重 λ₂ (L_late)"
+    value: 0.1
+    why: "同上"
+  - key: "train.loss.lambda3"
+    what: "损失权重 λ₃ (L_reg)"
+    value: 1.0e-3
+    why: "同上"
+  - key: "detect.k"
+    what: "LOF 邻居数 k"
+    value: 20
+    why: "论文 Eq.(9)-(12) 中 k 全程只有符号，全文未赋值"
+  - key: "detect.persistence_windows"
+    what: "持久性/去抖规则"
+    value: 1
+    why: "论文完全没有去抖规则；K=1 即忠实于论文（单窗越限即报警）"
+  - key: "train.loss.latent_align.resistance_target"
+    what: "内阻对齐是包级还是逐单体"
+    value: "pack_mean"
+    why: "论文只说对齐到「内阻」，未说明是每单体还是包级"
+  - key: "detect.standardize"
+    what: "LOF 前是否标准化特征"
+    value: true
+    why: "论文未说明；24 维特征量纲差异极大，不标准化会让欧氏距离被大量纲特征主导"
+  - key: "train.select_on"
+    what: "选权判据"
+    value: "val_recon"
+    why: "论文未说明选权依据；若按含 λ₂ 项的 val_loss 选，各配置 λ 不同会排成「谁加权项多谁大」而非「谁重建得准」"
+  - key: "data.normalize"
+    what: "输入归一化方式"
+    value: "robust（中位数/MAD，按通道，只在训练折拟合）"
+    why: "论文全文未提任何输入归一化；而它直接决定 L_recon 的量级"
+  - key: "train.val_ratio"
+    what: "内部验证集比例"
+    value: 0.15
+    why: "论文未给"
+  - key: "train.early_stop_patience"
+    what: "早停 patience"
+    value: 50
+    why: "论文只说 max 1500 epochs，未提早停"
+  - key: "model.variational"
+    what: "变分头"
+    value: true
+    why: "L_reg 是 KL(q(z|x)‖p(z))，要求随机编码器；但 Table 1 是纯确定性卷积栈，没有任何分布头"
+  - key: "model.decoder"
+    what: "解码器结构"
+    value: "对称上采样 + 裁剪到 256"
+    why: "论文 Table 1 第 8-10 层的 stride 会把时间维继续放大，算不出它自己声明的 256×8；推算见 DEVIATIONS.md 第 5 条"
+
+paths:
+  data_raw: "data/raw"          # 四个 Stand*.mat（已 gitignore，不入库）
+  outputs: "outputs"            # 运行产物根目录
+
+# ----------------------------------------------------------------------------
+# 数据文件（实测：MAT **v5**，float64；h5py 读不了，只能 scipy.io）
+# ----------------------------------------------------------------------------
+data:
+  files:
+    train: "StandTrainData.mat"   # 26508 窗，ID ∈ {6,8,9,10}
+    test1: "StandTestData1.mat"   # 8110 窗，ID ∈ {6,8,9,10}（同包的故障段）
+    test2: "StandTestData2.mat"   # 21013 窗，ID ∈ {1,2,3,4,5}
+    test3: "StandTestData3.mat"   # 40093 窗，ID ∈ {17,18,19,20,21}
+  var:
+    signal: "Xall"                # (256, 20, N)
+    # ID 变量名在文件间不统一，按序尝试（实测）
+    id_candidates: ["ThisTrainID", "ThisID1", "ThisID"]
+    # 实测：train 无此变量；test1/2/3 的 ThisTimeSlot 是 MATLAB **MCOS datetime 对象**
+    # （dtype 字段 _TypeSystem/_Class/_ObjectMetadata），scipy **无法解码其内容**。
+    # 故时间轴在本项目中实际不可用 —— 记为「存在但不可读」，不假装读到了。
+    time: "ThisTimeSlot"
+    hidden: "Hiddall"             # 仅 train / test1 有；(1, 9, N)
+  # 预期形状（用于读入后立刻断言，形状不符就报错而非继续）
+  expected:
+    rows: 256
+    cols: 20
+    hidden_channels: 9
+  # 输入归一化 —— **论文完全未提**（全文检索无任何 normalize / standardize 描述；
+  # §2.2 那句 "normalized to a comparable range" 说的是潜变量对齐的两个向量，不是网络输入）。
+  # 归一化方式直接决定 L_recon 的量级，因此必须显式登记为假定。
+  normalize:
+    method: "robust"     # ASSUMED：按通道中位数 / MAD 稳健标准化
+    floor: 1.0e-3        # ASSUMED：尺度下限，防止近零方差通道被放大
+    fit_on: "train_fold" # 只在训练折上拟合统计量，不碰留出包
+
+# ----------------------------------------------------------------------------
+# 通道布局  (INFERRED：与论文「8 电压 + 8 电流 + 4 温度」吻合，但无字段字典佐证)
+# 列号 1-based，与 MATLAB 习惯一致。数据本身是 0-based，代码里会自行换算。
+# ----------------------------------------------------------------------------
+channels:
+  cell_voltage: [1, 3, 5, 7, 9, 11, 13, 15]     # 8 路单体电压
+  current:      [2, 4, 6, 8, 10, 12, 14, 16]    # 8 路电流（总电流 + 均衡电流派生）
+  temperature:  [17, 18, 19, 20]                # 4 路温度
+  # 物理量纲换算 —— **INFERRED 且未经证实**，会直接改变余弦相似度指标的数值。
+  # 默认关闭（raw_cache）：论文用的是什么域并没有写。
+  apply_physical_scale: false
+  voltage_offset: 3.0        # 仅当 apply_physical_scale=true 时生效
+  current_scale: 100.0       # 仅当 apply_physical_scale=true 时生效
+
+# ----------------------------------------------------------------------------
+# 滑窗
+#
+# ⚠ **数据已经是切好的窗**：``Xall`` 形状为 (256, 20, N)，每个样本本身就是
+#   256 时间步 × 20 通道。因此滑窗步长（以及是否重叠、如何丢弃尾部）
+#   由**数据生产方**决定，本地**不可知、也不可恢复**，本项目不做任何再切分。
+#   论文只说「applied a fixed-length sliding time window」，未给步长 —— 这一项
+#   属于"论文缺 + 数据缺"的双重不可知，**不是本项目可以假定的参数**。
+# ----------------------------------------------------------------------------
+windows:
+  length: 256                       # 论文 Table 2：输入 256 × 20 × 1（与数据一致，已实测）
+
+# ----------------------------------------------------------------------------
+# 模型 —— 论文 Table 1「12 层卷积自编码器」
+#
+# ⚠ Table 1 的自相矛盾：按无 padding 常规约定逐层推算，解码器得 746×8，
+#   而非 Table 2 声明的 256×8×1。推算过程见 docs/DEVIATIONS.md 第 5 条。
+#   本实现：**编码器按 Table 1 原样**；解码器改为对称上采样 + 末端裁剪到 256。
+# ----------------------------------------------------------------------------
+model:
+  encoder:
+    conv1: {out: 16,  kernel: [5, 2],  stride: [1, 2]}   # Table 1 原样
+    pool1: {size: [3, 1], stride: [3, 1]}
+    conv2: {out: 32,  kernel: [1, 10], stride: [1, 1]}
+    pool2: {size: [3, 1], stride: [3, 1]}
+    conv3: {out: 256, kernel: [28, 1], stride: [1, 1]}   # → 1×1×256 瓶颈
+  decoder:
+    # ASSUMED：论文 Table 1 第 8–10 层的 stride 会把时间维继续放大，无法回到 256。
+    # 改为逐级上采样后裁剪到 windows.length。
+    channels: [32, 32, 16, 16]
+    out_channels: 8                                      # 只重建单体电压
+  variational: true       # ASSUMED：L_reg 是 KL(q(z|x)‖p(z))，要求随机编码器；
+                          # 但 Table 1 是纯确定性卷积栈，没有任何分布头。此处补一个变分头。
+  latent_dim: 256         # 瓶颈维度，与 Table 1 的 conv3 输出一致
+  dropout: 0.0
+
+# ----------------------------------------------------------------------------
+# 训练 —— 论文 Table 2
+# ----------------------------------------------------------------------------
+train:
+  optimizer: "adam"          # Table 2
+  device: "auto"             # cuda if available else cpu
+  max_epochs: 1500           # Table 2
+  lr: 1.0e-3                 # Table 2
+  batch_size: 512            # Table 2
+  weight_decay: 0.0
+  grad_clip: 1.0
+  early_stop_patience: 50    # ASSUMED：论文只说 max 1500 epochs，未提早停
+  val_ratio: 0.15            # ASSUMED：论文未给验证集比例
+  # ASSUMED：选权判据。按重建质量选，而不是按含 λ₂ 项的总损失选 ——
+  # 各配置 λ 不同，按 val_loss 选会排成"谁加权项多谁大"，不是"谁重建得准"。
+  select_on: "val_recon"
+  seed: 42
+  amp: true                  # 混合精度（GPU）
+
+  # 损失权重 —— 论文式(1)。**论文只给了符号 λ₁ λ₂ λ₃，全文无取值。**
+  # 以下为 ASSUMED（复现报告 §2.2 曾用同一组值）。
+  loss:
+    lambda1: 1.0             # ASSUMED  L_recon
+    lambda2: 0.1             # ASSUMED  L_late（物理对齐）
+    lambda3: 1.0e-3          # ASSUMED  L_reg（KL）
+    recon_on: "voltage"      # 只重建电压（非对称解码器）
+    latent_align:
+      soc_slots: 1           # 对齐 SOC 的潜变量槽数
+      resistance_slots: 1    # 对齐内阻的潜变量槽数
+      # ASSUMED：论文未说明内阻是逐单体还是包级。
+      # pack_mean → 1 槽对 8 单体的均值（与论文 §4.2 自述的失败模式吻合）
+      # per_cell  → 8 槽逐单体对齐
+      resistance_target: "pack_mean"
+      normalize: true        # 对齐前把物理量标准化到可比范围（论文只说"normalized"）
+
+# ----------------------------------------------------------------------------
+# Hiddall —— 物理状态来源
+#
+# INFERRED：[SOC, R₁…R₈]；语义与单位**未经字段字典验证**，且与模型的对齐目标同源，
+#           **不是独立真值**，不得用于任何"定位准确率"类结论。
+#
+# 实测值域（本轮，train 全量）：整字段 0.0264 ~ 2.1211。
+# → 量级约为 10⁰，与等效电路内阻常见的 mΩ 量级（10¹）**差一个数量级**，
+#   早期文档所称单位「mΩ」**与实测不符**，已作废；实际是归一化量还是别的量纲，
+#   本地无法判定，一律记为单位未知。
+#   另注：第 2~9 通道在同一小段内逐行完全相同，说明其更新频率低于窗频。
+# ----------------------------------------------------------------------------
+hidden:
+  soc_channel: 1
+  resistance_channels: [2, 3, 4, 5, 6, 7, 8, 9]   # → 单体 1..8，顺序未验证
+  units: "unknown"        # 实测值域 ≈ [0.34, 0.87]，疑为归一化量，单位未知
+
+# ----------------------------------------------------------------------------
+# 故障指标 —— 论文 §2.3：每单体 3 个指标 × 8 单体 = 24 维
+# ----------------------------------------------------------------------------
+features:
+  families: ["sigma_v", "cosine", "q3"]   # 论文 §2.3.1 / §2.3.2 / §2.3.3
+  q3_percentile: 75.0                     # 论文：第三四分位数
+  eps: 1.0e-8                             # 余弦相似度的分母保护
+
+# ----------------------------------------------------------------------------
+# 检测 —— LOF，论文 §2.4
+# ----------------------------------------------------------------------------
+detect:
+  method: "lof"
+  # ASSUMED：论文 Eq.(9)-(12) 中 k 全程只有符号，**全文未赋值**。
+  k: 20                                  # 取 sklearn 默认；另做 k 敏感性扫描
+  k_fallback: "min"                      # k = min(k, N_fit − 1)
+  threshold_quantile: 0.99               # 论文：正常训练集 LOF 分数的 99 分位
+  threshold_domain: "train"              # ASSUMED：阈值的校准域（论文未说明）
+  # ASSUMED：论文未说明 LOF 前是否标准化特征。24 维特征量纲差异极大
+  # （余弦 ≈1，Q3 为电压量级），不标准化会让欧氏距离被大量纲特征完全主导。
+  standardize: true
+  # ASSUMED：论文**完全没有**去抖/持久性规则。默认 K=1（忠实于论文，单窗越限即报警），
+  # 同时跑 K=5 变体并两种都报，说明差异。
+  persistence_windows: 1
+  persistence_variants: [1, 5]
+
+# ----------------------------------------------------------------------------
+# 实验划分 —— 论文 §4.1
+#
+# ⚠ 协议选择决定了结果的量级，必须先说清楚：
+#
+#   protocol = "paper"  论文 §4.1 原样
+#       训练：6/8/9/10 的**正常段**（StandTrainData.mat）
+#       检测：**同样这四个包**的故障段（StandTestData1.mat）
+#       → 被检测的包的正常工况**模型见过**，所以正常段重建好、LOF 低、曲线呈"一条平线 + 一个尖峰"。
+#
+#   protocol = "lopo"   跨包留出（Leave-One-Pack-Out）
+#       每次留出一个包，只用另外三个包训练；在该留出包上检测。
+#       → **这不是论文的协议**，是更严格的泛化测试。被评包的工况模型没见过，
+#         正常段重建就会变差、LOF 整体抬高，越限比例远高于 1%。
+#         这正是"图上看起来全是故障"的直接来源，与 LOF 是否算错无关。
+#
+#   两种协议的结果**不可混为一谈**，报告中必须标明用的是哪一种。
+# ----------------------------------------------------------------------------
+experiment:
+  protocol: "paper"             # "paper" | "lopo"
+  train_packs: [6, 8, 9, 10]    # 论文：初级训练集的四个包
+  test1_packs: [6, 8, 9, 10]    # 论文 Test dataset 1：同样四包的故障段
+  # 论文 Test dataset 2 为 [2,5,12,14]；本地数据**缺 12、14**，只有 2 与 5。
+  test2_packs: [2, 5]
+  test2_packs_missing: [12, 14] # 显式登记缺失，禁止在表里静默留空
+  folds: [6, 8, 9, 10]          # protocol=lopo 时每次留出一包

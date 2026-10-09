@@ -1,0 +1,13 @@
+# 原始数据（828 MB，不入库；见 README 的获取说明）
+data/raw/*.mat
+
+# 运行产物
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
