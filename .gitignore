@@ -12,7 +12,11 @@ __pycache__/
 .venv/
 venv/
 
-# 不入库：论文原文 PDF（版权，入库会被公开分发）与本地报告
+# 不入库：本地文件
+# 论文原文 PDF：版权原因，不在公开仓库分发
 docs/Battery_Pack_Fault_Manuscript.pdf
+# 已弃用的复现报告：数字在本仓库无溯源
+docs/Battery_Pack_Fault_Reproduction_Report.md
 CLAUDE.md
 技术报告_*
+.vscode/
