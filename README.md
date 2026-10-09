@@ -108,7 +108,6 @@ scripts/
 docs/
   DEVIATIONS.md            # ★ 与论文的全部偏差登记
   REPRODUCTION_NOTES.md    # 论文给了什么 / 不可复现什么
-  Battery_Pack_Fault_Manuscript.pdf
   Battery_Pack_Fault_Reproduction_Report.md   # ⛔ 已弃用：pypack 时代产物，数字不可引用
 ```
 

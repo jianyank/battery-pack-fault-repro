@@ -11,3 +11,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+
+# 不入库：论文原文 PDF（版权，入库会被公开分发）与本地报告
+docs/Battery_Pack_Fault_Manuscript.pdf
+CLAUDE.md
+技术报告_*
