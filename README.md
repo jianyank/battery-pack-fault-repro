@@ -63,11 +63,13 @@ python run.py all           # 先 paper 再 lopo
 `scripts/` 下的脚本也可直接运行（等效）：`python scripts/smoke.py`、
 `python scripts/run_all.py --protocol paper`、`python scripts/check_data.py`。
 
-两个**诊断**脚本（不训练，秒级／约 1 分钟）：
+诊断 / 对照 / 消融脚本：
 
 ```bash
-python scripts/rebuild_baseline.py   # 从已存 checkpoint 重算确定性基线（约 1 分钟）
-python scripts/lof_scan.py           # LOF 侧单因素敏感性扫描（秒级）
+python scripts/rebuild_baseline.py   # 从已存 checkpoint 重算确定性基线（不训练，约 1 分钟）
+python scripts/lof_scan.py           # LOF 侧单因素敏感性扫描（只读，秒级）
+python scripts/iae_baseline.py       # IAE 基线对照（复用同一 checkpoint，不训练，约 1 分钟）
+python scripts/lambda_ablation.py    # λ 消融，重训 3 个配置（约 12–15 分钟）
 ```
 
 > `rebuild_baseline.py` 的存在是因为一处已修复的缺陷：推理期曾做变分采样，导致
@@ -101,6 +103,8 @@ scripts/
   check_data.py            # 数据大小与 SHA256 核对
   rebuild_baseline.py      # 从 checkpoint 重算确定性基线（不训练）
   lof_scan.py              # LOF 单因素敏感性扫描（只读）
+  iae_baseline.py          # IAE 基线对照（复用同一 checkpoint）
+  lambda_ablation.py       # λ 消融（重训 3 个配置）
 docs/
   DEVIATIONS.md            # ★ 与论文的全部偏差登记
   REPRODUCTION_NOTES.md    # 论文给了什么 / 不可复现什么
