@@ -35,6 +35,10 @@ conda activate batfd          # Python 3.12.14 / torch 2.14.0+cu126 / CUDA 可�
 | `StandTestData2.mat` | 82 MB | 21,013 窗；包 `1–5` |
 | `StandTestData3.mat` | 364 MB | 40,093 窗；包 `17–21` |
 
+⚠ **数据不随版本控制走**（`data/raw/` 已 gitignore，828 MB）。
+**把本目录搬到别处时必须一并带上这四个文件**，否则无法运行。
+校验和与来源见 [`data/README.md`](data/README.md)，用 `python run.py check-data` 核对。
+
 格式为 **MAT v5**（`h5py` 读不了，只能用 `scipy.io`）。
 `Xall` 形状 `(256, 20, N)` —— **每个样本本身就是切好的窗**，本项目不再切分。
 
@@ -43,19 +47,20 @@ conda activate batfd          # Python 3.12.14 / torch 2.14.0+cu126 / CUDA 可�
 
 ## 3. 运行
 
+统一入口 `run.py`，**与当前工作目录无关**，可从任意位置调用：
+
 ```bash
-# 快速自检（不训练，约 1 分钟）
-python scripts/smoke.py
-
-# 端到端：论文协议
-python scripts/run_all.py --protocol paper
-
-# 端到端：跨包留出（更严格的泛化测试，不是论文协议）
-python scripts/run_all.py --protocol lopo
-
-# 冒烟：3 个 epoch 跑通全链路
-python scripts/run_all.py --max-epochs 3
+python run.py check-data    # 核对 data/raw 四个 .mat 的大小与 SHA256（搬到别处后先跑这个）
+python run.py smoke         # 10 项自检，不训练，约 1 分钟
+python run.py paper         # 端到端，论文 §4.1 协议
+python run.py lopo          # 端到端，跨包留出（更严格的泛化测试，不是论文协议）
+python run.py all           # 先 paper 再 lopo
 ```
+
+命令后可透传参数，例如 `python run.py paper --max-epochs 3` 做冒烟。
+
+`scripts/` 下的脚本也可直接运行（等效）：`python scripts/smoke.py`、
+`python scripts/run_all.py --protocol paper`、`python scripts/check_data.py`。
 
 产物落在 `outputs/<timestamp>_<tag>/`：训练历史、checkpoint、特征、LOF 分数、
 `detection_table.csv`、`figures/*.png`、`summary.json`。
@@ -66,9 +71,10 @@ python scripts/run_all.py --max-epochs 3
 ## 4. 目录结构
 
 ```
+run.py                     # ★ cwd 无关的统一入口（check-data / smoke / paper / lopo / all）
 configs/base.yaml          # 单一事实来源；`assumed:` 段是论文未给项的机器可读清单
 configs/fault_table.yaml   # 28 包故障表（取自论文 PDF 第 20 页原文）
-data/raw/                  # 四个 .mat（不入库）
+data/raw/                  # 四个 .mat（不入库；校验和见 data/README.md）
 packrepro/
   paths.py                 # ★ 相对根定位，全库无绝对路径
   config.py                # 配置加载与校验
@@ -81,23 +87,40 @@ packrepro/
 scripts/
   smoke.py                 # 10 项自检
   run_all.py               # 端到端驱动
+  check_data.py            # 数据大小与 SHA256 核对
 docs/
   DEVIATIONS.md            # ★ 与论文的全部偏差登记
   REPRODUCTION_NOTES.md    # 论文给了什么 / 不可复现什么
   Battery_Pack_Fault_Manuscript.pdf
 ```
 
-## 5. 可移植性
+## 5. 别处运行
 
-**整个目录可任意搬迁、改名、换机器。** 项目根由 `packrepro/paths.py` 从文件位置反推，
-代码中不含绝对路径，`configs/base.yaml` 中的路径一律相对项目根书写。
-若需显式指定根，可设环境变量 `PACKREPRO_ROOT`。
+项目根由 `packrepro/paths.py` 从文件位置反推，代码与配置中**不含任何绝对路径**，
+`configs/base.yaml` 里的路径一律相对项目根书写。若需显式指定根，可设 `PACKREPRO_ROOT`。
 
-**实测已验证**：把整个目录改名为 `_portability_probe_renamed`、不设任何环境变量，
-在其下运行 `python scripts/smoke.py` —— 10 项自检全部通过，项目根被正确解析到新路径。
-代码与配置中的绝对路径扫描为**零命中**。
+### 已实测验证的场景
 
-复现该验证：复制目录（或仅复制代码并把 `data/raw/*.mat` 硬链接过去），改名后跑 `smoke.py` 即可。
+| 场景 | 结果 |
+|---|---|
+| 目录改名 / 换路径 | ✅ 在 `_portability_probe_renamed` 下、不设环境变量，smoke 10/10 通过 |
+| 从任意工作目录启动 | ✅ 在 `/tmp` 下 `python <路径>/run.py check-data` 与 `run.py smoke` 均通过 |
+| 无 GPU 的机器 | ✅ `CUDA_VISIBLE_DEVICES=""` 跑通全链路，自动回退 CPU |
+| 无需安装 | ✅ 无 `pyproject`/`setup.py`，靠 `sys.path` 插入，不需要 `pip install -e .` |
+
+### 搬到别处的检查清单
+
+1. **带上数据。** `data/raw/` 下的四个 `.mat` 不随版本控制走。跑
+   `python run.py check-data` 核对（大小 + SHA256，期望值见 [`data/README.md`](data/README.md)）。
+2. **选对解释器。** 必须是装了 `torch` 的环境（见 `requirements.txt`）。
+   IDE 默认解释器往往不是它 —— 症状是 `ModuleNotFoundError: No module named 'torch'`。
+3. **跑一遍自检。** `python run.py smoke`，10 项应全过。
+
+### 未实测的场景
+
+* **跨操作系统**：只在 Windows 上验证过。代码用 `pathlib`，理论上跨平台，但**未实测**。
+* **Python 版本**：只在 3.12.14 上验证过。
+* **torch 版本**：只在 2.14.0 上验证过。
 
 ## 6. 结果口径 —— 不报什么
 
